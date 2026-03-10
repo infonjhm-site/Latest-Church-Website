@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   appendRippleKeyframes();
   // Setup dropdowns
   initDropdowns();
+  // Setup featured worship carousel
+  initFeaturedVideoCarousel();
 });
 
 // ======== Dropdowns ========
@@ -225,6 +227,159 @@ function isElementInViewport(el) {
   if (!el) return false;
   const rect = el.getBoundingClientRect();
   return rect.top < window.innerHeight && rect.bottom >= 0;
+}
+
+// ======== Featured worship carousel ========
+function initFeaturedVideoCarousel() {
+  const carousels = document.querySelectorAll('[data-featured-carousel]');
+  if (!carousels.length) return;
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  carousels.forEach((carousel) => {
+    const viewport = carousel.querySelector('.featured-video-viewport');
+    const track = carousel.querySelector('.featured-video-track');
+    const slides = Array.from(carousel.querySelectorAll('.featured-video-slide'));
+    const dots = Array.from(carousel.querySelectorAll('.featured-carousel-dot'));
+
+    if (!viewport || !track || !slides.length) return;
+
+    let currentIndex = 0;
+    let autoSlideId = null;
+    let pointerStart = null;
+
+    const syncVideos = () => {
+      slides.forEach((slide, index) => {
+        const video = slide.querySelector('video');
+        const isActive = index === currentIndex;
+
+        slide.classList.toggle('active', isActive);
+        slide.setAttribute('aria-hidden', String(!isActive));
+
+        if (!video) return;
+
+        if (isActive) {
+          const playPromise = video.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+          }
+        } else {
+          video.pause();
+          video.currentTime = 0;
+        }
+      });
+    };
+
+    const updateDots = () => {
+      dots.forEach((dot, index) => {
+        const isActive = index === currentIndex;
+        dot.classList.toggle('active', isActive);
+        dot.setAttribute('aria-current', String(isActive));
+        dot.tabIndex = isActive ? 0 : -1;
+      });
+    };
+
+    const stopAutoSlide = () => {
+      if (autoSlideId) {
+        window.clearInterval(autoSlideId);
+        autoSlideId = null;
+      }
+    };
+
+    const startAutoSlide = () => {
+      if (prefersReducedMotion || slides.length < 2) return;
+      stopAutoSlide();
+      autoSlideId = window.setInterval(() => {
+        goToSlide(currentIndex + 1);
+      }, 7000);
+    };
+
+    const restartAutoSlide = () => {
+      stopAutoSlide();
+      startAutoSlide();
+    };
+
+    const goToSlide = (index, { restart = false } = {}) => {
+      currentIndex = (index + slides.length) % slides.length;
+      track.style.transform = `translateX(-${currentIndex * 100}%)`;
+      updateDots();
+      syncVideos();
+
+      if (restart) {
+        restartAutoSlide();
+      }
+    };
+
+    dots.forEach((dot, index) => {
+      dot.addEventListener('click', () => {
+        goToSlide(index, { restart: true });
+      });
+    });
+
+    const resetPointer = () => {
+      pointerStart = null;
+    };
+
+    viewport.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      pointerStart = { x: event.clientX, y: event.clientY };
+      stopAutoSlide();
+    });
+
+    viewport.addEventListener('pointerup', (event) => {
+      if (!pointerStart) return;
+
+      const deltaX = event.clientX - pointerStart.x;
+      const deltaY = event.clientY - pointerStart.y;
+      resetPointer();
+
+      if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX < 0) {
+          goToSlide(currentIndex + 1, { restart: true });
+        } else {
+          goToSlide(currentIndex - 1, { restart: true });
+        }
+        return;
+      }
+
+      startAutoSlide();
+    });
+
+    viewport.addEventListener('pointercancel', () => {
+      resetPointer();
+      startAutoSlide();
+    });
+
+    viewport.addEventListener('pointerleave', () => {
+      if (!pointerStart) return;
+      resetPointer();
+      startAutoSlide();
+    });
+
+    carousel.addEventListener('mouseenter', stopAutoSlide);
+    carousel.addEventListener('mouseleave', startAutoSlide);
+    carousel.addEventListener('focusin', stopAutoSlide);
+    carousel.addEventListener('focusout', (event) => {
+      if (!carousel.contains(event.relatedTarget)) {
+        startAutoSlide();
+      }
+    });
+
+    carousel.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        goToSlide(currentIndex + 1, { restart: true });
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        goToSlide(currentIndex - 1, { restart: true });
+      }
+    });
+
+    goToSlide(0);
+    startAutoSlide();
+  });
 }
 
 // ======== Events filter logic ========
